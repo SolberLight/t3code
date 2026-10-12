@@ -51,6 +51,7 @@ interface Viewer {
   readonly stop: () => void;
   readonly command: (input: PreviewStreamInput) => void;
   readonly togglePictureInPicture: () => void;
+  readonly holdPageSize: (hold: boolean) => void;
 }
 
 let activeViewer: Viewer | null = null;
@@ -67,6 +68,14 @@ export function command(input: PreviewStreamInput) {
 
 export function pictureInPicture() {
   activeViewer?.togglePictureInPicture();
+}
+
+/**
+ * Android floats the whole app in picture in picture, shrinking this view. While
+ * held, the page keeps the size it had, so the person's control does not reflow it.
+ */
+export function holdPageSize(hold: boolean) {
+  activeViewer?.holdPageSize(hold);
 }
 
 export function start(configuration: PreviewStreamConfiguration) {
@@ -99,6 +108,7 @@ export function start(configuration: PreviewStreamConfiguration) {
   let streaming = false;
   let viewport: PreviewStreamViewport | null = null;
   let size: { width: number; height: number } | null = null;
+  let pageSizeHeld = false;
   // Frame cap in device px, fixed per socket. It only grows, so only outgrowing it reconnects.
   let cap: { width: number; height: number } | null = null;
   let client: PreviewStreamClient | null = null;
@@ -222,7 +232,7 @@ export function start(configuration: PreviewStreamConfiguration) {
           if (nextControl.controller !== "you") clearInput();
           else {
             input.disabled = !interactive;
-            if (interactive && size && previous?.controller !== "you")
+            if (interactive && size && !pageSizeHeld && previous?.controller !== "you")
               next.send({ type: "resize", ...size });
           }
         },
@@ -249,7 +259,7 @@ export function start(configuration: PreviewStreamConfiguration) {
     const next = { width: Math.round(rect.width), height: Math.round(rect.height) };
     if (size?.width === next.width && size.height === next.height) return;
     size = next;
-    if (interactive) send({ type: "resize", ...next });
+    if (interactive && !pageSizeHeld) send({ type: "resize", ...next });
     const ratio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
     // The floating player scales a page of any shape into its box, so its cap is square.
     const side = Math.max(next.width, next.height);
@@ -722,6 +732,9 @@ export function start(configuration: PreviewStreamConfiguration) {
       send(message);
     },
     togglePictureInPicture,
+    holdPageSize: (hold) => {
+      pageSizeHeld = hold;
+    },
   };
   window.addEventListener("pagehide", stop, { once: true });
   reportStatus("connecting");

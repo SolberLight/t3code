@@ -16,6 +16,7 @@ import { ScreenHeader } from "../../components/ScreenHeader";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useThreadServerBrowserTabs } from "../../state/preview";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { useAndroidPictureInPicture } from "./androidPictureInPicture";
 import { BrowserTabMenu } from "./BrowserTabMenu";
 import { browserTabTitle, browserTabUrl, latestBrowserTab } from "./browserTabs";
 import {
@@ -81,6 +82,9 @@ function BrowserPreviewScreen({
   const [foreground, setForeground] = useState(AppState.currentState !== "background");
   const [selectedTabId, setSelectedTabId] = useState(initialTabId);
   const [pictureInPicture, setPictureInPicture] = useState(NO_PICTURE_IN_PICTURE);
+  const androidPictureInPicture = useAndroidPictureInPicture();
+  // The page's own size shapes the Android floating window.
+  const [viewport, setViewport] = useState<{ width: number; height: number } | null>(null);
   // Address bar commands only reach a page that is streaming.
   const [streaming, setStreaming] = useState(false);
   const [canControl, setCanControl] = useState(false);
@@ -91,6 +95,7 @@ function BrowserPreviewScreen({
   // Pin the fallback so another tab's activity does not switch the view.
   if (tabId !== null && tabId !== selectedTabId) {
     setPictureInPicture(NO_PICTURE_IN_PICTURE);
+    setViewport(null);
     setSelectedTabId(tabId);
   }
   useEffect(() => {
@@ -108,54 +113,77 @@ function BrowserPreviewScreen({
   }, []);
   const selectTab = (next: string) => {
     setPictureInPicture(NO_PICTURE_IN_PICTURE);
+    setViewport(null);
     setSelectedTabId(next);
   };
+  // Android floats the whole app, so the floating window shows only the page.
+  const floating = androidPictureInPicture.active;
+  const pictureInPictureSupported =
+    Platform.OS === "android"
+      ? androidPictureInPicture.supported && viewport !== null
+      : pictureInPicture.supported;
+  const pictureInPictureActive = Platform.OS === "android" ? floating : pictureInPicture.active;
+  const togglePictureInPicture = () => {
+    if (Platform.OS !== "android") {
+      streamRef.current?.togglePictureInPicture();
+      return;
+    }
+    if (!viewport) return;
+    void androidPictureInPicture.enter(viewport.width, viewport.height).then((entered) => {
+      if (entered) return;
+      Alert.alert(
+        "Picture in picture is unavailable",
+        "Allow picture in picture for this app in system settings.",
+      );
+    });
+  };
   // System picture in picture keeps showing this stream after the app leaves the foreground.
-  const live = (focused && foreground) || pictureInPicture.active;
+  const live = (focused && foreground) || pictureInPictureActive;
 
   return (
-    <View className="flex-1 bg-sheet" style={{ paddingBottom: insets.bottom }}>
-      <ScreenHeader
-        title={tab ? browserTabTitle(tab) : "Browser"}
-        sidebar={false}
-        onBack={onClose}
-        options={{ headerBackVisible: false }}
-        actions={
-          // Android WebView cannot play video in picture in picture.
-          Platform.OS === "ios" && pictureInPicture.supported
-            ? [
-                {
-                  accessibilityLabel: pictureInPicture.active
-                    ? "Exit picture in picture"
-                    : "Picture in picture",
-                  icon: {
-                    ios: pictureInPicture.active ? "pip.exit" : "pip.enter",
-                    android: "visibility",
+    <View className="flex-1 bg-sheet" style={{ paddingBottom: floating ? 0 : insets.bottom }}>
+      {floating ? null : (
+        <ScreenHeader
+          title={tab ? browserTabTitle(tab) : "Browser"}
+          sidebar={false}
+          onBack={onClose}
+          options={{ headerBackVisible: false }}
+          actions={
+            pictureInPictureSupported
+              ? [
+                  {
+                    accessibilityLabel: pictureInPictureActive
+                      ? "Exit picture in picture"
+                      : "Picture in picture",
+                    icon: {
+                      ios: pictureInPictureActive ? "pip.exit" : "pip.enter",
+                      android: "picture_in_picture_alt",
+                    },
+                    selected: pictureInPictureActive,
+                    onPress: togglePictureInPicture,
                   },
-                  selected: pictureInPicture.active,
-                  onPress: () => streamRef.current?.togglePictureInPicture(),
-                },
-              ]
-            : []
-        }
-        menus={
-          tabs.length > 1
-            ? [
-                {
-                  title: "Tabs",
-                  icon: "square.on.square",
-                  items: tabs.map((entry) => ({
-                    id: entry.tabId,
-                    title: browserTabTitle(entry),
-                    subtitle: browserTabUrl(entry),
-                    selected: entry.tabId === tabId,
-                    onPress: () => selectTab(entry.tabId),
-                  })),
-                },
-              ]
-            : []
-        }
-      />
+                ]
+              : []
+          }
+          menus={
+            tabs.length > 1
+              ? [
+                  {
+                    title: "Tabs",
+                    icon: "square.on.square",
+                    items: tabs.map((entry) => ({
+                      id: entry.tabId,
+                      title: browserTabTitle(entry),
+                      subtitle: browserTabUrl(entry),
+                      selected: entry.tabId === tabId,
+                      onPress: () => selectTab(entry.tabId),
+                    })),
+                  },
+                ]
+              : []
+          }
+        />
+      )}
       {Platform.OS === "ios" ? (
         <NativeHeaderToolbar placement="left">
           <NativeHeaderToolbar.Button
@@ -172,6 +200,7 @@ function BrowserPreviewScreen({
             key={tab.tabId}
             environmentId={environmentId}
             tab={tab}
+            hidden={floating}
             streaming={streaming}
             ready={streaming && canControl}
             onCommand={(input) => streamRef.current?.command(input)}
@@ -185,7 +214,10 @@ function BrowserPreviewScreen({
               ref={streamRef}
               interactive
               background={themeVariables["--color-sheet-solid"]}
+              compact={floating}
+              holdPageSize={floating}
               onPictureInPicture={onPictureInPicture}
+              onViewport={setViewport}
               onStreamingChange={setStreaming}
               onControl={(control) => setCanControl(control?.controller === "you")}
             />
@@ -207,12 +239,15 @@ function BrowserPreviewScreen({
 function BrowserAddressBar({
   environmentId,
   tab,
+  hidden,
   ready,
   streaming,
   onCommand,
 }: {
   readonly environmentId: EnvironmentId;
   readonly tab: PreviewSessionSnapshot;
+  /** Hidden rather than unmounted, so an unsent address survives picture in picture. */
+  readonly hidden: boolean;
   /** The viewer controls the page, so navigation and reload apply. */
   readonly ready: boolean;
   /** The menu's changes need no control, only a live tab. */
@@ -232,7 +267,10 @@ function BrowserAddressBar({
     }
   };
   return (
-    <View className="flex-row items-center gap-1 px-2 pb-2">
+    <View
+      className="flex-row items-center gap-1 px-2 pb-2"
+      style={hidden ? { display: "none" } : undefined}
+    >
       <ControlPill
         icon="chevron.left"
         accessibilityLabel="Back"

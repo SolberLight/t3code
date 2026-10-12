@@ -95,6 +95,7 @@ import IconPalette from "@tabler/icons-react-native/IconPalette";
 import IconPencil from "@tabler/icons-react-native/IconPencil";
 import IconPlug from "@tabler/icons-react-native/IconPlug";
 import IconPhoto from "@tabler/icons-react-native/IconPhoto";
+import IconPictureInPicture from "@tabler/icons-react-native/IconPictureInPicture";
 import IconPin from "@tabler/icons-react-native/IconPin";
 import IconPinnedOff from "@tabler/icons-react-native/IconPinnedOff";
 import IconPlayerPlay from "@tabler/icons-react-native/IconPlayerPlay";
@@ -311,6 +312,7 @@ const ANDROID_ICON_BY_MATERIAL_NAME = {
   lock: IconLock,
   more_vert: IconDotsVertical,
   merge: IconGitMerge,
+  picture_in_picture_alt: IconPictureInPicture,
   psychology: IconBrain,
   public: IconWorld,
   remove: IconMinus,

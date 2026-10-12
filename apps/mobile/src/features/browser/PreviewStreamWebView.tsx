@@ -58,6 +58,8 @@ type NativeStreamBridge = {
   readonly onStreamingChange?: (streaming: boolean) => void;
   /** The floating player shows a spinner without text or a reconnect button. */
   readonly compact?: boolean;
+  /** Keeps the page's size while this view shrinks into Android picture in picture. */
+  readonly holdPageSize?: boolean;
 };
 
 /** Picks files on this device and sends them to the page's open picker; none cancels it. */
@@ -230,6 +232,7 @@ function PreviewStreamDocumentView({
   configuration,
   background,
   compact,
+  holdPageSize,
   onUnauthorized,
   onGone,
   onViewport,
@@ -317,6 +320,11 @@ function PreviewStreamDocumentView({
     };
   }, []);
   useEffect(() => () => onStreamingChange?.(false), [onStreamingChange]);
+  useEffect(() => {
+    webView.current?.injectJavaScript(
+      `window.T3PreviewStream?.holdPageSize(${holdPageSize === true}); true;`,
+    );
+  }, [holdPageSize]);
   useEffect(() => () => controlChanged(null), []);
   const processTerminated = () => {
     if (!active.current || failed.current) return;
